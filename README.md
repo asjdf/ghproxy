@@ -30,17 +30,15 @@ github api、release、archive以及项目文件的加速项目，支持clone，
 
 ## cf worker部署
 
-首页：https://workers.cloudflare.com
+首先进行个性化设置
 
-注册，登陆，`Start building`，取一个子域名，`Create a Worker`。
-
-复制 [src/index.ts](https://cdn.jsdelivr.net/gh/asjdf/ghproxy@main/src/index.ts)  到左侧代码框，`Save and deploy`。如果正常，右侧应显示首页。
-
-`ASSET_URL`是静态资源的url（实际上就是现在显示出来的那个输入框单页面）
+`ASSET_URL`是静态资源的url（实际上就是现在显示出来的那个输入框单页面，可不修改，除非你加了新的feature）
 
 `PREFIX`是前缀，默认（根路径情况为"/"），如果自定义路由为example.com/gh/*，请将PREFIX改为 '/gh/'，注意，少一个杠都会错！
 
 `whiteList`是白名单，建议个人自用的时候根据需要进行设置，防止被薅羊毛
+
+执行 `wrangler publish src/index.ts --name ghproxy` 部署你自己的代理
 
 ## Cloudflare Workers计费
 
