@@ -43,7 +43,7 @@ const Config = {
     jsdelivr: 0,
 };
 
-const whiteList: string[] = ["asjdf","HDU-HealthCheckin"]; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
+const whiteList: string[] = []; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
 
 /** @type {RequestInit} */
 const PREFLIGHT_INIT = {
