@@ -66,6 +66,7 @@ const gistExp =
     /^(?:https?:\/\/)?gist\.(?:githubusercontent|github)\.com\/.+?\/.+?\/.+$/i;
 const tagsPageExp = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/tags.*$/i;
 const apiExp = /^(?:https?:\/\/)?api\.github\.com\/.*$/i;
+const oauthExp = /^(?:https?:\/\/)?github\.com\/login\/oauth\/.*$/i;
 
 /**
  * @param {any} body
@@ -89,7 +90,7 @@ function newUrl(urlStr: string) {
 }
 
 function checkUrl(u: string) {
-    for (let i of [releaseExp, fileExp, infoExp, rawExp, gistExp, tagsPageExp,apiExp]) {
+    for (let i of [releaseExp, fileExp, infoExp, rawExp, gistExp, tagsPageExp, apiExp, oauthExp]) {
         if (u.search(i) === 0) {
             return true;
         }
@@ -117,7 +118,8 @@ async function fetchHandler(req:Request): Promise<Response> {
         path.search(tagsPageExp) === 0 ||
         path.search(infoExp) === 0 ||
         path.search(rawExp) === 0 ||
-		path.search(apiExp) === 0
+		path.search(apiExp) === 0 ||
+        path.search(oauthExp) === 0
     ) {
         return await httpHandler(req, path);
     } else if (path.search(fileExp) === 0) {
