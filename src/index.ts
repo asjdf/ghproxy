@@ -25,10 +25,10 @@ export default {
         env: Env,
         ctx: ExecutionContext
     ): Promise<Response> {
-		const ret = fetchHandler(request).catch((err) =>
-			makeRes("cfworker error:\n" + err.stack, 502)
-		);
-		return await ret;
+        const ret = fetchHandler(request).catch((err) =>
+            makeRes("cfworker error:\n" + err.stack, 502)
+        );
+        return await ret;
     },
 };
 
@@ -43,7 +43,7 @@ const Config = {
     jsdelivr: 0,
 };
 
-const whiteList: string[] = []; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
+const whiteList: string[] = [""]; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
 
 /** @type {RequestInit} */
 const PREFLIGHT_INIT = {
@@ -90,7 +90,16 @@ function newUrl(urlStr: string) {
 }
 
 function checkUrl(u: string) {
-    for (let i of [releaseExp, fileExp, infoExp, rawExp, gistExp, tagsPageExp, apiExp, oauthExp]) {
+    for (let i of [
+        releaseExp,
+        fileExp,
+        infoExp,
+        rawExp,
+        gistExp,
+        tagsPageExp,
+        apiExp,
+        oauthExp,
+    ]) {
         if (u.search(i) === 0) {
             return true;
         }
@@ -101,7 +110,7 @@ function checkUrl(u: string) {
 /**
  * @param {Request} req
  */
-async function fetchHandler(req:Request): Promise<Response> {
+async function fetchHandler(req: Request): Promise<Response> {
     const urlStr = req.url;
     const urlObj = new URL(urlStr);
     let path = urlObj.searchParams.get("q");
@@ -118,7 +127,7 @@ async function fetchHandler(req:Request): Promise<Response> {
         path.search(tagsPageExp) === 0 ||
         path.search(infoExp) === 0 ||
         path.search(rawExp) === 0 ||
-		path.search(apiExp) === 0 ||
+        path.search(apiExp) === 0 ||
         path.search(oauthExp) === 0
     ) {
         return await httpHandler(req, path);
@@ -152,10 +161,7 @@ async function fetchHandler(req:Request): Promise<Response> {
  * @param {Request} req
  * @param {string} pathname
  */
-async function httpHandler(
-    req: Request,
-    pathname: string
-): Promise<Response> {
+async function httpHandler(req: Request, pathname: string): Promise<Response> {
     const reqHdrRaw = req.headers;
 
     // preflight
@@ -166,7 +172,7 @@ async function httpHandler(
         return new Response(null, PREFLIGHT_INIT);
     }
 
-	console.log(reqHdrRaw);
+    console.log(reqHdrRaw);
     const reqHdrNew = new Headers(reqHdrRaw);
 
     let urlStr = pathname;
@@ -207,7 +213,7 @@ async function proxy(
     if (urlObj === null) {
         return new Response("invalid url", { status: 400 });
     }
-	console.log(urlObj.href);
+    console.log(urlObj.href);
     const res = await fetch(urlObj.href, reqInit);
     const resHdrOld = res.headers;
     const resHdrNew = new Headers(resHdrOld);
