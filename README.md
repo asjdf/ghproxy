@@ -38,7 +38,7 @@ github api、release、archive以及项目文件的加速项目，支持clone，
 
 `whiteList`是白名单，建议个人自用的时候根据需要进行设置，防止被薅羊毛
 
-执行 `wrangler publish src/index.ts --name ghproxy` 部署你自己的代理
+执行 `wrangler deploy src/index.ts --name ghproxy` 部署你自己的代理
 
 ## Cloudflare Workers计费
 
