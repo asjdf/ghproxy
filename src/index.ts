@@ -43,9 +43,9 @@ const Config = {
     jsdelivr: 0,
 };
 
-const whiteList: string[] = [""]; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
+const whiteList: string[] = []; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
 
-/** @type {RequestInit} */
+/** @type {ResponseInit} */
 const PREFLIGHT_INIT = {
     status: 204,
     headers: new Headers({
@@ -186,7 +186,7 @@ async function httpHandler(req: Request, pathname: string): Promise<Response> {
     if (!flag) {
         return new Response("blocked", { status: 403 });
     }
-    if (urlStr.startsWith("github")) {
+    if (urlStr.search(/^https?:\/\//) !== 0) {
         urlStr = "https://" + urlStr;
     }
     const urlObj = newUrl(urlStr);
