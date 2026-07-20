@@ -4,3 +4,16 @@ compatibility_date = "2022-10-03"
 
 [placement]
 mode = "smart"
+
+# Workers Logs + Traces：在 Dashboard → Workers → ghproxy → Observability 查看
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.1

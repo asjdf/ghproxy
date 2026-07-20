@@ -30,15 +30,24 @@ github api、release、archive以及项目文件的加速项目，支持clone，
 
 ## cf worker部署
 
-首先进行个性化设置
+先复制配置再改个性化选项：
 
-`ASSET_URL`是静态资源的url（实际上就是现在显示出来的那个输入框单页面，可不修改，除非你加了新的feature）
+```bash
+cp src/config.example.ts src/config.ts
+```
 
-`PREFIX`是前缀，默认（根路径情况为"/"），如果自定义路由为example.com/gh/*，请将PREFIX改为 '/gh/'，注意，少一个杠都会错！
+在 `src/config.ts` 里改：
 
-`whiteList`是白名单，建议个人自用的时候根据需要进行设置，防止被薅羊毛
+- `assetUrl`：静态首页资源（一般不用改）
+- `prefix`：路由前缀，根路径为 `"/"`；若为 `example.com/gh/*` 则改为 `"/gh/"`
+- `jsdelivr`：分支文件是否走 jsDelivr（`0` 关 / `1` 开）
+- `whiteList`：白名单，路径包含其中任一字符串才放行；`[]` 表示不限制（容易被薅）
 
-执行 `wrangler deploy src/index.ts --name ghproxy` 部署你自己的代理
+然后部署：
+
+```bash
+npm run deploy
+```
 
 ## Cloudflare Workers计费
 

@@ -3,10 +3,12 @@
  *
  * - Run `wrangler dev src/index.ts` in your terminal to start a development server
  * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `wrangler publish src/index.ts --name my-worker` to publish your worker
+ * - Run `wrangler deploy` to publish your worker
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
+
+import { config } from "./config";
 
 export interface Env {
     // Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
@@ -25,25 +27,20 @@ export default {
         env: Env,
         ctx: ExecutionContext
     ): Promise<Response> {
-        const ret = fetchHandler(request).catch((err) =>
+        const ret = fetchHandler(request, ctx).catch((err) =>
             makeRes("cfworker error:\n" + err.stack, 502)
         );
         return await ret;
     },
 };
 
-/**
- * static files (404.html, sw.js, conf.js)
- */
-const ASSET_URL = "https://asjdf.github.io/ghproxy/";
-// 前缀，如果自定义路由为example.com/gh/*，将PREFIX改为 '/gh/'，注意，少一个杠都会错！
-const PREFIX = "/";
-// 分支文件使用jsDelivr镜像的开关，0为关闭，默认关闭
-const Config = {
-    jsdelivr: 0,
-};
-
-const whiteList: string[] = []; // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
+const {
+    assetUrl: ASSET_URL,
+    prefix: PREFIX,
+    jsdelivr,
+    whiteList,
+    logSampleRate,
+} = config;
 
 /** @type {ResponseInit} */
 const PREFLIGHT_INIT = {
@@ -107,20 +104,109 @@ function checkUrl(u: string) {
     return false;
 }
 
+/** release/archive/raw/gist 可缓存；git/api/oauth 不缓存 */
+function cacheTtlFor(url: string): number {
+    if (
+        infoExp.test(url) ||
+        apiExp.test(url) ||
+        oauthExp.test(url) ||
+        tagsPageExp.test(url)
+    ) {
+        return 0;
+    }
+    if (/\/releases\/download\//i.test(url)) return 604800;
+    if (/\/archive\//i.test(url)) return 86400;
+    if (rawExp.test(url) || /\/raw\//i.test(url)) return 3600;
+    if (gistExp.test(url)) return 3600;
+    return 0;
+}
+
+/** 首页静态资源放行；其余疑似代理路径走白名单 */
+function isStaticAssetPath(path: string) {
+    if (!path || path === "/") return true;
+    if (/^https?:\/\//i.test(path)) return false;
+    if (
+        /^(?:github\.com|raw\.(?:githubusercontent|github)\.com|gist\.(?:githubusercontent|github)\.com|api\.github\.com)/i.test(
+            path
+        )
+    ) {
+        return false;
+    }
+    return true;
+}
+
+function allowedByWhiteList(urlStr: string) {
+    if (!whiteList.length) return true;
+    return whiteList.some((item) => urlStr.includes(item));
+}
+
+function blocked(method: string, target: string) {
+    log(`blocked ${method} ${target}`, {
+        event: "blocked",
+        method,
+        target,
+    });
+    return new Response("blocked", { status: 403 });
+}
+
+/** Workers Logs 用 message 字符串渲染；blocked/错误始终记录 */
+function log(
+    message: string,
+    fields: Record<string, string | number | boolean | undefined> = {}
+) {
+    const event = fields.event;
+    const status = fields.status;
+    const always =
+        event === "blocked" ||
+        event === "proxy_error" ||
+        (typeof status === "number" && status >= 400);
+    if (!always && Math.random() >= logSampleRate) return;
+    console.log({ message, ...fields });
+}
+
+function finalizeResponse(res: Response): Response {
+    const headers = new Headers(res.headers);
+    headers.set("access-control-expose-headers", "*");
+    headers.set("access-control-allow-origin", "*");
+    headers.delete("content-security-policy");
+    headers.delete("content-security-policy-report-only");
+    headers.delete("clear-site-data");
+    return new Response(res.body, { status: res.status, headers });
+}
+
 /**
  * @param {Request} req
  */
-async function fetchHandler(req: Request): Promise<Response> {
+async function fetchHandler(
+    req: Request,
+    ctx: ExecutionContext
+): Promise<Response> {
     const urlStr = req.url;
     const urlObj = new URL(urlStr);
     let path = urlObj.searchParams.get("q");
     if (path) {
-        return Response.redirect("https://" + urlObj.host + PREFIX + path, 301);
+        if (!allowedByWhiteList(path)) {
+            return blocked(req.method, path);
+        }
+        const location = "https://" + urlObj.host + PREFIX + path;
+        log(`redirect q_param -> ${location}`, {
+            event: "redirect",
+            reason: "q_param",
+            method: req.method,
+            from: urlObj.pathname + urlObj.search,
+            to: location,
+        });
+        return Response.redirect(location, 301);
     }
     // cfworker 会把路径中的 `//` 合并成 `/`
     path = urlObj.href
         .substr(urlObj.origin.length + PREFIX.length)
         .replace(/^https?:\/+/, "https://");
+
+    if (!isStaticAssetPath(path) && !allowedByWhiteList(path)) {
+        return blocked(req.method, path);
+    }
+
     if (
         path.search(releaseExp) === 0 ||
         path.search(gistExp) === 0 ||
@@ -130,30 +216,36 @@ async function fetchHandler(req: Request): Promise<Response> {
         path.search(apiExp) === 0 ||
         path.search(oauthExp) === 0
     ) {
-        return await httpHandler(req, path);
+        return await httpHandler(req, path, ctx);
     } else if (path.search(fileExp) === 0) {
-        if (Config.jsdelivr) {
+        if (jsdelivr) {
             const newUrl = path
                 .replace("/blob/", "@")
                 .replace(
                     /^(?:https?:\/\/)?github\.com/,
                     "https://cdn.jsdelivr.net/gh"
                 );
+            log(`redirect jsdelivr_blob ${path} -> ${newUrl}`, {
+                event: "redirect",
+                reason: "jsdelivr_blob",
+                method: req.method,
+                from: path,
+                to: newUrl,
+            });
             return Response.redirect(newUrl, 302);
         } else {
             path = path.replace("/blob/", "/raw/");
-            return await httpHandler(req, path);
+            return await httpHandler(req, path, ctx);
         }
-    } else if (path.search(rawExp) === 0) {
-        const newUrl = path
-            .replace(/(?<=com\/.+?\/.+?)\/(.+?\/)/, "@$1")
-            .replace(
-                /^(?:https?:\/\/)?raw\.(?:githubusercontent|github)\.com/,
-                "https://cdn.jsdelivr.net/gh"
-            );
-        return Response.redirect(newUrl, 302);
     } else {
-        return await fetch(ASSET_URL + path);
+        const assetUrl = ASSET_URL + path;
+        log(`asset ${path || "/"}`, {
+            event: "asset",
+            method: req.method,
+            path: path || "/",
+            assetUrl,
+        });
+        return await fetch(assetUrl);
     }
 }
 
@@ -161,7 +253,11 @@ async function fetchHandler(req: Request): Promise<Response> {
  * @param {Request} req
  * @param {string} pathname
  */
-async function httpHandler(req: Request, pathname: string): Promise<Response> {
+async function httpHandler(
+    req: Request,
+    pathname: string,
+    ctx: ExecutionContext
+): Promise<Response> {
     const reqHdrRaw = req.headers;
 
     // preflight
@@ -172,19 +268,11 @@ async function httpHandler(req: Request, pathname: string): Promise<Response> {
         return new Response(null, PREFLIGHT_INIT);
     }
 
-    console.log(reqHdrRaw);
     const reqHdrNew = new Headers(reqHdrRaw);
 
     let urlStr = pathname;
-    let flag = !Boolean(whiteList.length);
-    for (let i of whiteList) {
-        if (urlStr.includes(i)) {
-            flag = true;
-            break;
-        }
-    }
-    if (!flag) {
-        return new Response("blocked", { status: 403 });
+    if (!allowedByWhiteList(urlStr)) {
+        return blocked(req.method, urlStr);
     }
     if (urlStr.search(/^https?:\/\//) !== 0) {
         urlStr = "https://" + urlStr;
@@ -198,7 +286,7 @@ async function httpHandler(req: Request, pathname: string): Promise<Response> {
         redirect: "manual",
         body: req.body,
     };
-    return await proxy(urlObj, reqInit);
+    return await proxy(urlObj, reqInit, req, ctx);
 }
 
 /**
@@ -208,35 +296,85 @@ async function httpHandler(req: Request, pathname: string): Promise<Response> {
  */
 async function proxy(
     urlObj: URL | null,
-    reqInit: RequestInit
+    reqInit: RequestInit,
+    req: Request,
+    ctx: ExecutionContext
 ): Promise<Response> {
     if (urlObj === null) {
+        log(`proxy_error invalid_url ${reqInit.method}`, {
+            event: "proxy_error",
+            reason: "invalid_url",
+            method: String(reqInit.method ?? ""),
+        });
         return new Response("invalid url", { status: 400 });
     }
-    console.log(urlObj.href);
-    const res = await fetch(urlObj.href, reqInit);
-    const resHdrOld = res.headers;
-    const resHdrNew = new Headers(resHdrOld);
 
+    const method = String(reqInit.method ?? "GET");
+    const ttl = cacheTtlFor(urlObj.href);
+    const cacheable =
+        ttl > 0 &&
+        (method === "GET" || method === "HEAD") &&
+        !req.headers.has("Range");
+
+    if (cacheable) {
+        const cache = caches.default;
+        const cacheKey = new Request(urlObj.href, { method });
+        const hit = await cache.match(cacheKey);
+        if (hit) {
+            log(`cache_hit ${method} ${urlObj.href}`, {
+                event: "cache_hit",
+                method,
+                target: urlObj.href,
+            });
+            return hit;
+        }
+    }
+
+    const res = await fetch(urlObj.href, reqInit);
+    const resHdrNew = new Headers(res.headers);
     const status = res.status;
 
     if (resHdrNew.has("location")) {
         let _location = resHdrNew.get("location") || "";
-        if (checkUrl(_location)) resHdrNew.set("location", PREFIX + _location);
-        else {
+        if (checkUrl(_location)) {
+            const rewritten = PREFIX + _location;
+            log(`proxy ${method} ${urlObj.href} -> ${status} loc=${rewritten}`, {
+                event: "proxy",
+                method,
+                target: urlObj.href,
+                status,
+                location: rewritten,
+                follow: false,
+            });
+            resHdrNew.set("location", rewritten);
+        } else {
+            log(`proxy_follow ${method} ${urlObj.href} -> ${_location}`, {
+                event: "proxy_follow",
+                method,
+                from: urlObj.href,
+                to: _location,
+                status,
+            });
             reqInit.redirect = "follow";
-            return proxy(newUrl(_location), reqInit);
+            return proxy(newUrl(_location), reqInit, req, ctx);
         }
+    } else {
+        log(`proxy ${method} ${urlObj.href} -> ${status}`, {
+            event: "proxy",
+            method,
+            target: urlObj.href,
+            status,
+        });
     }
-    resHdrNew.set("access-control-expose-headers", "*");
-    resHdrNew.set("access-control-allow-origin", "*");
 
-    resHdrNew.delete("content-security-policy");
-    resHdrNew.delete("content-security-policy-report-only");
-    resHdrNew.delete("clear-site-data");
+    let out = finalizeResponse(
+        new Response(res.body, { status, headers: resHdrNew })
+    );
 
-    return new Response(res.body, {
-        status,
-        headers: resHdrNew,
-    });
+    if (cacheable && out.ok) {
+        out.headers.set("Cache-Control", `public, max-age=${ttl}`);
+        ctx.waitUntil(caches.default.put(new Request(urlObj.href, { method }), out.clone()));
+    }
+
+    return out;
 }
