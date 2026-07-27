@@ -20,6 +20,8 @@ github api、release、archive以及项目文件的加速项目，支持clone，
 
 - release文件：https://github.com/asjdf/project/releases/download/v0.1.0/example.zip
 
+- release Atom：https://github.com/asjdf/project/releases.atom
+
 - 分支文件：https://github.com/asjdf/project/blob/master/filename
 
 - commit文件：https://github.com/asjdf/project/blob/1111111111111111111111111111/filename

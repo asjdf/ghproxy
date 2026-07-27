@@ -9,6 +9,18 @@
  */
 
 import { config } from "./config";
+import {
+    apiExp,
+    cacheTtlFor,
+    fileExp,
+    gistExp,
+    infoExp,
+    isProxyableUrl,
+    oauthExp,
+    rawExp,
+    releaseExp,
+    tagsPageExp,
+} from "./patterns";
 
 export interface Env {
     // Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
@@ -53,18 +65,6 @@ const PREFLIGHT_INIT = {
     }),
 };
 
-const releaseExp =
-    /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/(?:releases|archive)\/.*$/i;
-const fileExp = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/(?:blob|raw)\/.*$/i;
-const infoExp = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/(?:info|git-).*$/i;
-const rawExp =
-    /^(?:https?:\/\/)?raw\.(?:githubusercontent|github)\.com\/.+?\/.+?\/.+?\/.+$/i;
-const gistExp =
-    /^(?:https?:\/\/)?gist\.(?:githubusercontent|github)\.com\/.+?\/.+?\/.+$/i;
-const tagsPageExp = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/tags.*$/i;
-const apiExp = /^(?:https?:\/\/)?api\.github\.com\/.*$/i;
-const oauthExp = /^(?:https?:\/\/)?github\.com\/login\/oauth\/.*$/i;
-
 /**
  * @param {any} body
  * @param {number} status
@@ -87,38 +87,7 @@ function newUrl(urlStr: string) {
 }
 
 function checkUrl(u: string) {
-    for (let i of [
-        releaseExp,
-        fileExp,
-        infoExp,
-        rawExp,
-        gistExp,
-        tagsPageExp,
-        apiExp,
-        oauthExp,
-    ]) {
-        if (u.search(i) === 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/** release/archive/raw/gist 可缓存；git/api/oauth 不缓存 */
-function cacheTtlFor(url: string): number {
-    if (
-        infoExp.test(url) ||
-        apiExp.test(url) ||
-        oauthExp.test(url) ||
-        tagsPageExp.test(url)
-    ) {
-        return 0;
-    }
-    if (/\/releases\/download\//i.test(url)) return 604800;
-    if (/\/archive\//i.test(url)) return 86400;
-    if (rawExp.test(url) || /\/raw\//i.test(url)) return 3600;
-    if (gistExp.test(url)) return 3600;
-    return 0;
+    return isProxyableUrl(u);
 }
 
 /** 首页静态资源放行；其余疑似代理路径走白名单 */
